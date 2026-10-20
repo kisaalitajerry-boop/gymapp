@@ -13,13 +13,22 @@
 //   · geometry snapped to .5 so it lands on pixel edges at 24px
 
 const P = {
+  muscletrack: <path d="M4 17.5V9a3.5 3.5 0 0 1 6.2-2.2L12 9l1.8-2.2A3.5 3.5 0 0 1 20 9v8.5" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />,
+  grid: <path d="M5 5.5h.01M12 5.5h.01M19 5.5h.01M5 12h.01M12 12h.01M19 12h.01M5 18.5h.01M12 18.5h.01M19 18.5h.01" strokeWidth="3" strokeLinecap="round" />,
+  dots: <path d="M6 12h.01M12 12h.01M18 12h.01" strokeWidth="3.2" strokeLinecap="round" />,
+  recovery: <><path d="M12 3a9 9 0 1 0 9 9" /><path d="M12 7v5l3 3" /><circle cx="21" cy="12" r="1.5" fill="currentColor" /></>,
+  socks: <path d="M7 3.5h5v9.5l3.5 3.5a2.5 2.5 0 0 1-3.5 3.5L6 14V3.5h1Z" strokeWidth="1.8" />,
+  sleeve: <path d="M7 4h10l-1.5 16H8.5L7 4Z" strokeWidth="1.8" />,
+  kneeSleeve: <><path d="M7 4h10l-1.5 16H8.5L7 4Z" strokeWidth="1.8" /><circle cx="12" cy="12" r="2.5" strokeWidth="1.5" /></>,
+  calfSleeve: <><path d="M7 5h10l-2 14H9L7 5Z" strokeWidth="1.8" /><path d="M8 10h8M8.5 14h7" strokeWidth="1.2" strokeDasharray="1.5 1.5" /></>,
+  thighSleeve: <><path d="M6 4h12l-2 16H8L6 4Z" strokeWidth="1.8" /><path d="M6.5 8h11" strokeWidth="1.5" /></>,
+  armSleeve: <path d="M7 4h10l-3 16h-4L7 4Z" strokeWidth="1.8" />,
+  boots: <><path d="M6 3h7v11l4 3.5a2.5 2.5 0 0 1-3.5 3.5L5 16V3h1Z" strokeWidth="1.8" /><path d="M6 7h7M6 11h7" strokeWidth="1.4" /></>,
   /* ---- navigation ---- */
   house: <path d="M3.5 10.7 12 3.8l8.5 6.9M5.9 9.4V19a1.4 1.4 0 0 0 1.4 1.4h9.4A1.4 1.4 0 0 0 18.1 19V9.4" />,
   calendar: <><rect x="3.4" y="5.2" width="17.2" height="15.4" rx="3.2" /><path d="M8.2 3.4v3.4M15.8 3.4v3.4M3.4 10.2h17.2" /></>,
   chart: <path d="M4.5 20.2V13M9.5 20.2V6.4M14.5 20.2v-5.1M19.5 20.2V9.6" />,
   magnifier: <><circle cx="11" cy="11" r="7" /><path d="m20.5 20.5-4.4-4.4" /></>,
-  // A real cog outline (8 teeth, generated on a circle) — an earlier version drew
-  // radial rays and was indistinguishable from `sun` at tab-bar size.
   gear: <><path d="M20.48 10.59 20.48 13.41 18.58 13.72 17.87 15.43 19 17 17 19 15.43 17.87 13.72 18.58 13.41 20.48 10.59 20.48 10.28 18.58 8.57 17.87 7 19 5 17 6.13 15.43 5.42 13.72 3.52 13.41 3.52 10.59 5.42 10.28 6.13 8.57 5 7 7 5 8.57 6.13 10.28 5.42 10.59 3.52 13.41 3.52 13.72 5.42 15.43 6.13 17 5 19 7 17.87 8.57 18.58 10.28Z" /><circle cx="12" cy="12" r="3.1" /></>,
 
   /* ---- training ---- */
@@ -86,6 +95,9 @@ const P = {
   chevronUp: <path d="m5.6 14.6 6.4-6.2 6.4 6.2" />,
   arrowUp: <path d="M12 19.6V4.4M6.2 10.6 12 4.4l5.8 6.2" />,
   arrowDown: <path d="M12 4.4v15.2M6.2 13.4 12 19.6l5.8-6.2" />,
+  arrowRight: <path d="M4.4 12h15.2M13.4 6.2l5.8 5.8-5.8 5.8" />,
+  arrowLeft: <path d="M19.6 12H4.4M10.6 17.8 4.4 12l6.2-5.8" />,
+  chat: <path d="M20 12a8 8 0 0 1-11.8 7l-4.2 1 1-4.2A8 8 0 1 1 20 12Z" />,
   expand: <path d="M14.4 4.4h5.2v5.2M9.6 19.6H4.4v-5.2M19.6 4.4 13.8 10.2M4.4 19.6l5.8-5.8" />,
   minimize: <path d="M19.6 9.6h-5.2V4.4M4.4 14.4h5.2v5.2M14.4 9.6l5.2-5.2M9.6 14.4l-5.2 5.2" />,
 
@@ -112,15 +124,23 @@ const P = {
   signOut: <><path d="M14.2 4.6H7a1.9 1.9 0 0 0-1.9 1.9v11a1.9 1.9 0 0 0 1.9 1.9h7.2" /><path d="m16.8 8.4 3.6 3.6-3.6 3.6M20.4 12H10.2" /></>,
   shuffle: <><path d="M3.6 7.2h2.9c1.6 0 2.8.9 3.8 2.4l3 4.8c1 1.5 2.2 2.4 3.8 2.4h2.9M3.6 16.8h2.9c1.6 0 2.8-.9 3.8-2.4l.7-1.1M15.6 9.9l.7-1.1c1-1.5 2.2-2.4 3.8-2.4h1.9" /><path d="m17.9 4.3 2.8 2.1-2.8 2.1M17.9 14.7l2.8 2.1-2.8 2.1" /></>,
   info: <><circle cx="12" cy="12" r="8.2" /><path d="M12 11v5.4" /><circle cx="12" cy="7.9" r=".9" fill="currentColor" stroke="none" /></>,
+  camera: <><path d="M4 8a2 2 0 0 1 2-2h2.5l1.5-2h4l1.5 2H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" /><circle cx="12" cy="13" r="3.4" /></>,
+  droplet: <path d="M12 3.2c-3.8 4.6-6 8-6 10.8a6 6 0 0 0 12 0c0-2.8-2.2-6.2-6-10.8Z" />,
+  forkKnife: <><path d="M5.5 4v6a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2V4M7.5 4v16M16 4v16M14 4h3a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-3" /></>,
+  scan: <><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M4 16v3a1 1 0 0 0 1 1h3M16 20h3a1 1 0 0 0 1-1v-3M4 12h16" /></>,
 }
 
 // A few keys are aliases so call sites can say what they mean.
 P.search = P.magnifier
+P.water = P.droplet
+P.food = P.forkKnife
 P.settings = P.gear
 P.exercises = P.magnifier
 P.weight = P.scale
 P.streak = P.flame
 P.done = P.check
+P.coach = P.sparkles
+P.more = P.grid
 
 export const ICON_NAMES = Object.keys(P)
 

@@ -98,7 +98,7 @@ function CreatedPlan({ p, S, update, toast, nav, refresh }) {
         </div>
         {!!e.why && <div className="dim" style={{ fontSize: '.72rem', marginTop: 3, lineHeight: 1.4 }}>{e.why}</div>}
       </div>)}
-      <div style={{ marginTop: 10 }}><BodyMap load={loadOfRoutine(r)} body={S.body} /></div>
+      <div style={{ marginTop: 10 }}><BodyMap load={loadOfRoutine(r)} body={S.gender || S.body || 'male'} /></div>
     </div>)}
 
     <div className="card">

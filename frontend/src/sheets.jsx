@@ -20,6 +20,10 @@ import { buildPlanBundle, parsePlan, mergePlan, printPlan } from './lib/plan-sha
 import { estimate1RM, best1RM, is1RMRecord, REP_CAP } from './lib/onerm.js'
 import { nextPrescription, applyPrescription, policyFor, defaultIncrement, POLICIES_FOR, POLICY_NAME, POLICY_DESC } from './lib/progression.js'
 import { MOBILE, shareExport } from './lib/mobile.js'
+import { platesPerSide } from './lib/plates.js'
+import { rankSubstitutes } from './lib/substitute.js'
+import Paywall from './views/Paywall.jsx'
+import PrShareSheet from './components/PrShareSheet.jsx'
 
 const S = () => useStore.getState().S
 const update = (...a) => useStore.getState().update(...a)
@@ -707,6 +711,29 @@ function WorkoutDetail({ w, close }) {
           <div className="ss">{e.sets.filter(s => s.done).map(s => setLabel(e.id, s, e.target)).join('  ·  ') || t('no sets')}</div></div>
       </div>
     })}
+    {w.prs && w.prs.length > 0 && (
+      <button
+        className="btn pill-sm pill-outline"
+        style={{ marginBottom: 14, width: '100%', borderColor: 'var(--acc)', color: 'var(--acc)', gap: 6 }}
+        onClick={() => {
+          const firstPrId = w.prs[0];
+          const prEntry = w.entries.find(e => e.id === firstPrId);
+          const topSet = prEntry ? [...prEntry.sets].filter(s => s.done).sort((a,b) => (b.w||0) - (a.w||0))[0] : null;
+          const prData = {
+            exerciseName: (EXIDX[firstPrId] || {}).n || firstPrId,
+            weight: topSet?.w || 100,
+            reps: topSet?.r || 5,
+            e1rm: Math.round((topSet?.w || 100) * (1 + (topSet?.r || 5) / 30)),
+            unit: st.unit,
+            userName: st.user?.name || 'Athlete'
+          };
+          prShareSheet(prData);
+        }}
+      >
+        <Icon name="share" size={14} />
+        <span>{t('Share PR Card (Story)')}</span>
+      </button>
+    )}
     <Button variant="danger" onClick={() => confirmSheet({ title: t('Delete workout?'), message: t('This removes it from your history for good.'), confirmText: t('Delete'), danger: true, onConfirm: () => { update(s => { s.workouts = s.workouts.filter(x => x.id !== w.id) }); close(); toast(t('Workout deleted')) } })}>{t('Delete workout')}</Button>
   </>
 }
@@ -892,10 +919,33 @@ function FinishSummary({ w, prs, e1prs = [], close }) {
       <div className="tile"><div className="l">{t('Sets')}</div><div className="v" style={{ fontSize: '1.1rem' }}>{setsDone(w)}</div></div>
       <div className="tile"><div className="l">{t('PRs')}</div><div className="v" style={{ fontSize: 20 }}>{prs.length || '—'}</div></div>
     </div>
-    {(prs.length > 0 || e1prs.length > 0) && <div style={{ textAlign: 'left', marginBottom: 12 }}>
-      {prs.map(id => <div key={id} className="small accent capitalize row" style={{ gap: 5 }}><Icon name="trophy" style={{ fontSize: 13 }} />{t('New PR:')} {(EXIDX[id] || {}).n || id}</div>)}
-      {e1prs.map(p => <div key={p.id} className="small accent capitalize row" style={{ gap: 5 }}><Icon name="chartLine" style={{ fontSize: 13 }} />{t('Best estimated 1RM:')} {(EXIDX[p.id] || {}).n || p.id} · {fmtNum(p.est)} {st.unit}</div>)}
-    </div>}
+    {(prs.length > 0 || e1prs.length > 0) && (
+      <div style={{ textAlign: 'left', marginBottom: 12 }}>
+        {prs.map(id => <div key={id} className="small accent capitalize row" style={{ gap: 5 }}><Icon name="trophy" style={{ fontSize: 13 }} />{t('New PR:')} {(EXIDX[id] || {}).n || id}</div>)}
+        {e1prs.map(p => <div key={p.id} className="small accent capitalize row" style={{ gap: 5 }}><Icon name="chartLine" style={{ fontSize: 13 }} />{t('Best estimated 1RM:')} {(EXIDX[p.id] || {}).n || p.id} · {fmtNum(p.est)} {st.unit}</div>)}
+        <button
+          className="btn pill-sm pill-outline"
+          style={{ marginTop: 10, width: '100%', borderColor: 'var(--acc)', color: 'var(--acc)', gap: 6 }}
+          onClick={() => {
+            const firstPrId = prs[0] || (e1prs[0] ? e1prs[0].id : null);
+            const prEntry = w.entries.find(e => e.id === firstPrId);
+            const topSet = prEntry ? [...prEntry.sets].filter(s => s.done).sort((a,b) => (b.w||0) - (a.w||0))[0] : null;
+            const prData = {
+              exerciseName: (EXIDX[firstPrId] || {}).n || firstPrId,
+              weight: topSet?.w || (e1prs[0] ? Math.round(e1prs[0].est) : 100),
+              reps: topSet?.r || 5,
+              e1rm: e1prs[0] ? Math.round(e1prs[0].est) : Math.round((topSet?.w || 100) * (1 + (topSet?.r || 5) / 30)),
+              unit: st.unit,
+              userName: st.user?.name || 'Athlete'
+            };
+            prShareSheet(prData);
+          }}
+        >
+          <Icon name="share" size={14} />
+          <span>{t('Share PR Card (Story)')}</span>
+        </button>
+      </div>
+    )}
     <h4 className="sec" style={{ textAlign: 'left' }}>{t('What you just trained')}</h4>
     <BodyMap load={loadOfWorkouts([w])} body={st.body} />
     {coachOn && <SessionRating w={w} />}
@@ -947,3 +997,157 @@ function doFinishWorkout() {
   beep(snd(), 880, 0.15); beep(snd(), 1100, 0.15, 0.18); beep(snd(), 1320, 0.3, 0.36)
   ui().openSheet(close => <FinishSummary w={w} prs={prs} e1prs={e1prs} close={close} />, { kind: 'center', locked: true })
 }
+
+/* ============================ Plate Calculator Sheet (Task 13) ============================ */
+
+function PlateCalculatorSheet({ initialWeight = 60, unit = 'kg', onApply, close }) {
+  const [weight, setWeight] = useState(initialWeight)
+  const barWeight = unit === 'lb' ? 45 : 20
+  const calc = platesPerSide(weight, barWeight, null, unit)
+
+  const PLATE_COLORS = {
+    25: '#ef4444', 20: '#3b82f6', 15: '#eab308', 10: '#22c55e', 5: '#ffffff', 2.5: '#1e293b', 1.25: '#6b7280',
+    45: '#3b82f6', 35: '#eab308'
+  }
+
+  return (
+    <div>
+      <div className="row between" style={{ marginBottom: 12 }}>
+        <h3 style={{ margin: 0 }}>{t('Plate Calculator')}</h3>
+        <button className="iconbtn" onClick={close}><Icon name="xmark" /></button>
+      </div>
+
+      <div className="card" style={{ textAlign: 'center', padding: '18px 14px' }}>
+        <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--acc)' }}>
+          {weight} <span style={{ fontSize: 18, color: 'var(--label-2)' }}>{unit}</span>
+        </div>
+        <div style={{ color: 'var(--label-3)', fontSize: 13, marginTop: 4 }}>
+          {t('Bar weight: {0} {1} · {2} {3} per side', barWeight, unit, Math.max(0, (calc.totalLoaded - barWeight) / 2), unit)}
+        </div>
+
+        {/* Barbell visualizer */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 70, margin: '18px 0', gap: 4 }}>
+          <div style={{ width: 40, height: 12, background: '#94a3b8', borderRadius: 4 }} />
+          <div style={{ width: 8, height: 32, background: '#cbd5e1', borderRadius: 2 }} />
+          {calc.plates.map((p, idx) => (
+            <div
+              key={idx}
+              style={{
+                width: 14,
+                height: Math.min(64, Math.max(28, p * 2.2)),
+                background: PLATE_COLORS[p] || 'var(--acc)',
+                borderRadius: 3,
+                boxShadow: '0 2px 5px rgba(0,0,0,0.4)',
+                border: '1px solid rgba(0,0,0,0.3)'
+              }}
+              title={`${p} ${unit}`}
+            />
+          ))}
+          {calc.plates.length === 0 && <span style={{ fontSize: 12, color: 'var(--label-3)', marginLeft: 8 }}>{t('Bar only')}</span>}
+          <div style={{ width: 30, height: 14, background: '#94a3b8', borderRadius: '0 4px 4px 0' }} />
+        </div>
+
+        {/* Plate breakdown table */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginBottom: 12 }}>
+          {Object.entries(calc.plateCounts).map(([w, count]) => (
+            <span key={w} className="badge-status badge-ready" style={{ fontSize: 13, padding: '5px 12px' }}>
+              {w} {unit} × {count} / {t('side')}
+            </span>
+          ))}
+        </div>
+
+        {calc.remainder > 0 && (
+          <div style={{ fontSize: 12, color: 'var(--yellow)', marginTop: 6 }}>
+            {t('Remainder: {0} {1}', calc.remainder, unit)}
+          </div>
+        )}
+      </div>
+
+      <div className="row" style={{ gap: 8, marginBottom: 16 }}>
+        <button className="btn" style={{ flex: 1 }} onClick={() => setWeight(w => Math.max(barWeight, w - (unit === 'lb' ? 5 : 2.5)))}>
+          - {unit === 'lb' ? 5 : 2.5}
+        </button>
+        <button className="btn" style={{ flex: 1 }} onClick={() => setWeight(w => w + (unit === 'lb' ? 5 : 2.5))}>
+          + {unit === 'lb' ? 5 : 2.5}
+        </button>
+      </div>
+
+      {onApply && (
+        <button
+          className="btn primary pill"
+          onClick={() => { onApply(weight); close(); }}
+        >
+          {t('Use {0} {1}', weight, unit)}
+        </button>
+      )}
+    </div>
+  )
+}
+
+export function plateCalcSheet(currentWeight, unit, onApply) {
+  ui().openSheet(close => <PlateCalculatorSheet initialWeight={currentWeight} unit={unit} onApply={onApply} close={close} />)
+}
+
+/* ============================ Exercise Substitution Sheet (Task 15) ============================ */
+
+function SubstituteSheet({ currentEx, onSwap, close }) {
+  const [candidates] = useState(() => rankSubstitutes(currentEx, EXDB, { maxResults: 8 }))
+
+  return (
+    <div>
+      <div className="row between" style={{ marginBottom: 12 }}>
+        <h3 style={{ margin: 0 }}>{t('Substitute Exercise')}</h3>
+        <button className="iconbtn" onClick={close}><Icon name="xmark" /></button>
+      </div>
+
+      <div style={{ color: 'var(--label-2)', fontSize: 14, marginBottom: 14 }}>
+        {t('Smart alternatives for {0} targeting similar muscles and movement patterns:', currentEx.n)}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '60vh', overflowY: 'auto' }}>
+        {candidates.map(c => {
+          const ex = c.exercise
+          return (
+            <div key={ex.id} className="card" style={{ padding: '12px 14px', margin: 0 }}>
+              <div className="row between">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 16, textTransform: 'capitalize' }}>
+                    {ex.n}
+                  </div>
+                  <div className="row" style={{ gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                    <span className="badge-status badge-ready" style={{ fontSize: 11 }}>
+                      {c.score}% {t('Match')}
+                    </span>
+                    {ex.eq && <span className="tag" style={{ fontSize: 11 }}>{t(ex.eq)}</span>}
+                    {ex.tg && <span className="tag" style={{ fontSize: 11 }}>{t(ex.tg)}</span>}
+                  </div>
+                </div>
+                <button
+                  className="btn primary pill-sm"
+                  onClick={() => { onSwap(ex); close(); }}
+                  style={{ flexShrink: 0, marginLeft: 10 }}
+                >
+                  {t('Swap')}
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+export function swapExerciseSheet(currentEx, onSwap) {
+  ui().openSheet(close => <SubstituteSheet currentEx={currentEx} onSwap={onSwap} close={close} />)
+}
+
+export function paywallSheet() {
+  ui().openSheet(close => <Paywall close={close} />)
+}
+
+export function prShareSheet(prData) {
+  ui().openSheet(close => <PrShareSheet prData={prData} close={close} />)
+}
+
+

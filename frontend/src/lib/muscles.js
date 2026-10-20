@@ -32,7 +32,7 @@ export const MUSCLE_NAME = {
 }
 
 // Every spelling that occurs in the dataset's `tg` and `sm` fields. null = not drawable.
-const ALIAS = {
+export const ALIAS = {
   // primaries
   abs: 'abs', pectorals: 'chest', biceps: 'biceps', glutes: 'gluteal', delts: 'deltoids',
   triceps: 'triceps', 'upper back': 'upper-back', lats: 'upper-back', calves: 'calves',

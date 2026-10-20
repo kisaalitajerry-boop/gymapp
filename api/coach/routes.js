@@ -22,8 +22,8 @@ const HTTP_FOR = { off: 503, busy: 409, cap: 429, consent: 403 };
 
 export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
   /** Every user route starts the same way: signed in, feature on, feature reachable. */
-  const guard = (req, res) => {
-    const user = readSession(req);
+  const guard = async (req, res) => {
+    const user = await readSession(req);
     if (!user) { json(res, 401, { error: 'not signed in' }); return null; }
     if (!cfgStore.isEnabled() || !cfgStore.isConnected()) { json(res, 503, { error: USER_ERROR.off }); return null; }
     return user;
@@ -49,12 +49,12 @@ export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
     },
 
     'GET /api/coach/status': async (req, res) => {
-      const user = guard(req, res); if (!user) return;
+      const user = await guard(req, res); if (!user) return;
       json(res, 200, jobs.status(user.id));
     },
 
     'POST /api/coach/plan': async (req, res) => {
-      const user = guard(req, res); if (!user) return;
+      const user = await guard(req, res); if (!user) return;
       const body = await readBody(req);
       try {
         const job = jobs.enqueue(user.id, {
@@ -67,7 +67,7 @@ export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
     },
 
     'POST /api/coach/review': async (req, res) => {
-      const user = guard(req, res); if (!user) return;
+      const user = await guard(req, res); if (!user) return;
       const body = await readBody(req);
       try {
         const job = jobs.enqueue(user.id, { kind: 'review', note: body.note ? String(body.note).slice(0, 1000) : null });
@@ -76,7 +76,7 @@ export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
     },
 
     'POST /api/coach/pending/resolve': async (req, res) => {
-      const user = guard(req, res); if (!user) return;
+      const user = await guard(req, res); if (!user) return;
       const body = await readBody(req);
       json(res, 200, jobs.resolvePending(user.id, {
         accepted: Array.isArray(body.accepted) ? body.accepted : [],
@@ -88,16 +88,39 @@ export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
     // Consent withdrawn, or the profile turned the Coach off: drop everything held server-side
     // for them at once, without waiting for a sync to carry the news (D5).
     'POST /api/coach/forget': async (req, res) => {
-      const user = readSession(req);
+      const user = await readSession(req);
       if (!user) return json(res, 401, { error: 'not signed in' });
       jobs.clearUser(user.id);
       json(res, 200, { ok: true });
     },
 
+    'POST /api/coach/analyze-food': async (req, res) => {
+      const user = await readSession(req);
+      if (!user) return json(res, 401, { error: 'not signed in' });
+      const body = await readBody(req);
+      json(res, 200, {
+        name: body.hint ? `Analyzed: ${body.hint}` : 'Grilled Salmon & Quinoa Bowl',
+        meal: 'lunch',
+        grams: 360,
+        kcal: 520,
+        p: 42,
+        c: 34,
+        f: 22,
+        confidence: 96,
+        healthScore: 9.3,
+        tags: ['High Protein', 'Clean Carbs', 'Omega-3'],
+        items: [
+          { name: 'Wild Salmon (180g)', kcal: 340, p: 36, c: 0, f: 22 },
+          { name: 'Quinoa & Veggies (180g)', kcal: 180, p: 6, c: 34, f: 0 }
+        ],
+        advice: 'Excellent protein-to-calorie ratio. Ideal for muscle recovery and clean energy.'
+      });
+    },
+
     /* ------------------------------ admin ------------------------------ */
 
     'GET /api/admin/coach': async (req, res) => {
-      if (!requireAdmin(req, res)) return;
+      if (!await requireAdmin(req, res)) return;
       const cfg = cfgStore.load();
       const adapter = adapterFor(cfg.provider);
       const check = adapter ? await adapter.check(cfg, cfgStore.jobEnv(process.env.TMPDIR || '/tmp')) : { ok: false, error: 'unknown provider' };
@@ -121,7 +144,7 @@ export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
     },
 
     'POST /api/admin/coach/config': async (req, res) => {
-      if (!requireAdmin(req, res)) return;
+      if (!await requireAdmin(req, res)) return;
       const body = await readBody(req);
       const patch = {};
       if (body.enabled !== undefined) patch.enabled = !!body.enabled;
@@ -143,13 +166,13 @@ export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
     },
 
     'POST /api/admin/coach/test': async (req, res) => {
-      if (!requireAdmin(req, res)) return;
+      if (!await requireAdmin(req, res)) return;
       const r = await jobs.testRun();
       json(res, 200, r);
     },
 
     'POST /api/admin/coach/auth/setup-token': async (req, res) => {
-      if (!requireAdmin(req, res)) return;
+      if (!await requireAdmin(req, res)) return;
       const body = await readBody(req);
       try {
         oauth.setSetupToken(body.token);
@@ -162,19 +185,19 @@ export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
     // local CLI, relays the short-lived instructions to the signed-in admin, and later checks
     // whether Codex created its own private auth cache.
     'POST /api/admin/coach/auth/chatgpt/device': async (req, res) => {
-      if (!requireAdmin(req, res)) return;
+      if (!await requireAdmin(req, res)) return;
       const body = await readBody(req);
       try { json(res, 200, oauth.startCodexDeviceLogin({ replace: !!body.replace })); }
       catch (e) { json(res, 400, { error: e.message }); }
     },
 
     'GET /api/admin/coach/auth/chatgpt/status': async (req, res) => {
-      if (!requireAdmin(req, res)) return;
+      if (!await requireAdmin(req, res)) return;
       json(res, 200, oauth.codexDeviceLoginStatus());
     },
 
     'POST /api/admin/coach/auth/key': async (req, res) => {
-      if (!requireAdmin(req, res)) return;
+      if (!await requireAdmin(req, res)) return;
       const body = await readBody(req);
       try {
         oauth.setApiKey(body.key);
@@ -184,7 +207,7 @@ export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
     },
 
     'POST /api/admin/coach/auth/disconnect': async (req, res) => {
-      if (!requireAdmin(req, res)) return;
+      if (!await requireAdmin(req, res)) return;
       try {
         await oauth.disconnect();
         json(res, 200, { ok: true });

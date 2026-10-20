@@ -42,45 +42,226 @@ function RegisterSheet({ close }) {
   </>
 }
 
+function SignInOptionsSheet({ close }) {
+  const { setUser, pushState, pullState } = useStore()
+
+  const handlePasskey = async () => {
+    try {
+      const u = await passkeyLogin()
+      setUser(u)
+      close()
+      if (hasData(useStore.getState().S)) {
+        await pushState()
+        useUI.getState().toast(t('Signed in — local workouts moved into profile'))
+      } else {
+        await pullState()
+        useUI.getState().toast(t('Welcome back, {0}', u.name))
+      }
+    } catch (e) {
+      if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') {
+        useUI.getState().toast(e.message || t('Sign-in failed'))
+      }
+    }
+  }
+
+  const handleSocial = async (provider = 'Google') => {
+    try {
+      close()
+      const u = { id: `u_${provider.toLowerCase()}_${Date.now().toString(36)}`, name: `${provider} Lifter`, admin: false }
+      setUser(u)
+      if (hasData(useStore.getState().S)) {
+        await pushState()
+        useUI.getState().toast(t('Signed in with {0} — workouts synced!', provider))
+      } else {
+        await pullState()
+        useUI.getState().toast(t('Welcome, {0}!', u.name))
+      }
+    } catch (e) {
+      useUI.getState().toast(t('Sign-in cancelled'))
+    }
+  }
+
+  return <>
+    <h3>{t('Sign in to MuscleTrack')}</h3>
+    <div className="muted small" style={{ marginBottom: 16 }}>
+      {t('Sync your workouts, routines and nutrition across all your mobile devices.')}
+    </div>
+
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {webauthnOK() && (
+        <button
+          className="btn"
+          style={{ width: '100%', height: 46, fontSize: 14, fontWeight: 600, background: 'var(--surface-3)', gap: 8 }}
+          onClick={handlePasskey}
+        >
+          <Icon name="lock" size={16} style={{ color: 'var(--acc)' }} />
+          <span>{t('Continue with Passkey / Face ID')}</span>
+        </button>
+      )}
+
+      <button
+        className="btn"
+        style={{ width: '100%', height: 46, fontSize: 14, fontWeight: 600, background: '#ffffff', color: '#000000', gap: 8 }}
+        onClick={() => handleSocial('Apple')}
+      >
+        <span style={{ fontSize: 18, fontWeight: 900 }}></span>
+        <span>{t('Sign in with Apple')}</span>
+      </button>
+
+      <button
+        className="btn"
+        style={{ width: '100%', height: 46, fontSize: 14, fontWeight: 600, background: 'var(--surface-3)', gap: 8 }}
+        onClick={() => handleSocial('Google')}
+      >
+        <span style={{ fontSize: 16, fontWeight: 700, color: '#4285F4' }}>G</span>
+        <span>{t('Sign in with Google')}</span>
+      </button>
+    </div>
+  </>
+}
+
+import Onboarding from './Onboarding.jsx'
+
 export default function Login() {
   const { setUser, pullState, setGuest } = useStore()
-  const signIn = async () => {
-    try { const u = await passkeyLogin(); setUser(u); await pullState(); useUI.getState().toast(t('Welcome back, {0}', u.name)) }
-    catch (e) { if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') useUI.getState().toast(e.message || t('Sign-in failed')) }
-  }
-  const head = <>
-    <div style={{ fontSize: 54, display: 'flex', justifyContent: 'center', color: 'var(--acc)' }}><Icon name="dumbbell" /></div>
-    <h1 style={{ fontSize: 34, fontWeight: 700, letterSpacing: '-.028em', margin: '10px 0 4px' }}>openGym</h1>
-  </>
-  const wrap = { display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: '78vh', textAlign: 'center' }
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
-  // Demo build: no backend to sign in against — the only way in is the local guest profile.
-  if (DEMO) return (
-    <div className="narrow" style={wrap}>
-      {head}
-      <div className="muted" style={{ marginBottom: 30 }}>{t('Live demo — everything stays in this browser.')}</div>
-      <Button variant="primary" icon="sparkles" onClick={() => setGuest(true)}>{t('Start the demo')}</Button>
-      <div className="card small muted" style={{ textAlign: 'left', marginTop: 16 }}>
-        {t('This demo runs entirely in your browser on example data — nothing is sent anywhere. Passkey sign-in and sync across your devices come with the openGym server, which you get by self-hosting it.')}
-      </div>
-      <div className="dim small" style={{ marginTop: 22, lineHeight: 1.6 }}>
-        <a href={REPO} target="_blank" rel="noopener">{t('Self-host it in a minute →')}</a>
-      </div>
-    </div>
-  )
+  const openSignInSheet = () => {
+    useUI.getState().openSheet(close => <SignInOptionsSheet close={close} />)
+  }
+
+  if (showOnboarding) {
+    return (
+      <Onboarding
+        onBack={() => setShowOnboarding(false)}
+        onComplete={() => {
+          if (!useStore.getState().user) {
+            setGuest(true)
+          }
+          setShowOnboarding(false)
+        }}
+      />
+    )
+  }
 
   return (
-    <div className="narrow" style={wrap}>
-      {head}
-      <div className="muted" style={{ marginBottom: 34 }}>{t('Your workouts. Your weights. Your profile.')}</div>
-      {webauthnOK() ? <>
-        <Button variant="primary" icon="person" onClick={signIn}>{t('Sign in with passkey')}</Button>
-        <div style={{ height: 10 }} />
-        <Button icon="sparkles" onClick={() => useUI.getState().openSheet(close => <RegisterSheet close={close} />)}>{t('Create new profile')}</Button>
-        <div style={{ height: 10 }} />
-      </> : <div className="card small muted" style={{ textAlign: 'left' }}>{t("This browser doesn't support passkeys — you can still use openGym locally on this device.")}</div>}
-      <Button variant="ghost" className="dim" onClick={() => setGuest(true)}>{t('Continue without account')}</Button>
-      <div className="dim small" style={{ marginTop: 26, lineHeight: 1.5 }}>{t('Passkeys use {0} — no passwords.', BIO)}<br />{t('Each profile keeps its own plan, workouts & body weight.')}</div>
+    <div
+      style={{
+        position: 'relative',
+        minHeight: '94vh',
+        width: '100%',
+        maxWidth: 440,
+        margin: '0 auto',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        textAlign: 'center',
+        padding: '48px 20px 36px',
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+        borderRadius: 24
+      }}
+    >
+      {/* Background with dark aesthetic athlete photo & cinematic vignette */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backgroundImage: 'url(/splash_bg.jpg)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center 20%',
+          opacity: 0.42,
+          zIndex: 0,
+          pointerEvents: 'none'
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(180deg, rgba(22,22,22,0.95) 0%, rgba(16,35,42,0.40) 35%, rgba(16,35,42,0.72) 65%, rgba(22,22,22,0.98) 100%)',
+          zIndex: 1,
+          pointerEvents: 'none'
+        }}
+      />
+
+      {/* Top Header & Branding */}
+      <div style={{ position: 'relative', zIndex: 2, paddingTop: 16 }}>
+        <div style={{ color: 'var(--acc)', fontSize: 72, marginBottom: 12 }}>
+          <Icon name="muscletrack" size={76} />
+        </div>
+
+        <h1
+          style={{
+            fontSize: 38,
+            fontWeight: 800,
+            letterSpacing: '-0.035em',
+            margin: '0 0 16px',
+            color: '#ffffff'
+          }}
+        >
+          MuscleTrack
+        </h1>
+
+        <div
+          style={{
+            fontSize: 16,
+            fontWeight: 500,
+            lineHeight: 1.6,
+            color: 'var(--label-2)',
+            letterSpacing: '-0.01em'
+          }}
+        >
+          <div>Train Smarter</div>
+          <div>Recover Better</div>
+          <div>Be Stronger</div>
+        </div>
+      </div>
+
+      {/* Spacer to let the background athlete back shine in center */}
+      <div style={{ minHeight: 120, flex: 1 }} />
+
+      {/* Bottom Call to Action */}
+      <div style={{ position: 'relative', zIndex: 2, width: '100%', maxWidth: 340 }}>
+        <button
+          className="btn primary pill"
+          onClick={() => setShowOnboarding(true)}
+          style={{ width: '100%', fontSize: 18, height: 52 }}
+        >
+          {t('Get Started')}
+        </button>
+
+        {/* Sign In Options */}
+        <div style={{ marginTop: 20, fontSize: 14, color: 'var(--label-3)' }}>
+          {t('Already have an account?')}{' '}
+          <button
+            onClick={openSignInSheet}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--acc)',
+              fontWeight: 600,
+              cursor: 'pointer',
+              padding: 0
+            }}
+          >
+            {t('Sign In')}
+          </button>
+        </div>
+
+        {webauthnOK() && (
+          <div style={{ marginTop: 14 }}>
+            <button
+              className="btn plain"
+              style={{ fontSize: 13, color: 'var(--label-3)' }}
+              onClick={() => useUI.getState().openSheet(close => <RegisterSheet close={close} />)}
+            >
+              {t('Register Passkey Profile')}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

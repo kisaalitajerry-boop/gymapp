@@ -31,8 +31,14 @@ export const allExercises = st => [...(st.customEx || []), ...EXDB]
 // shipping ~140 MB of images into the deployment.
 const IMG_BASE = import.meta.env.VITE_IMG_BASE || 'img/'
 const GIF_BASE = import.meta.env.VITE_GIF_BASE || 'gif/'
-export const imgSrc = ex => IMG_BASE + ex.img
-export const gifSrc = ex => GIF_BASE + ex.gif
+export const imgSrc = ex => {
+  if (ex?.id === '0025' || ex?.n?.toLowerCase().includes('bench press')) return '/bench_press_exercise.jpg'
+  return IMG_BASE + (ex?.img || '')
+}
+export const gifSrc = ex => {
+  if (ex?.id === '0025' || ex?.n?.toLowerCase().includes('bench press')) return '/bench_press_exercise.jpg'
+  return GIF_BASE + (ex?.gif || '')
+}
 
 // Cardio exercises log time + speed instead of weight × reps.
 export const isCardio = idOrEx => (typeof idOrEx === 'string' ? EXIDX[idOrEx] : idOrEx)?.bp === 'cardio'

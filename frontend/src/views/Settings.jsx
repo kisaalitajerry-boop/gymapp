@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useStore, DEF, hasData } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { ACCENTS, todayISO, localTZ } from '../lib/format.js'
-import { effortOf } from '../lib/history.js'
-import { webauthnOK, passkeyLogin, passkeyRegister, IS_ANDROID } from '../lib/api.js'
+import { effortOf, lastBW } from '../lib/history.js'
+import { calculateTDEE } from '../lib/tdee.js'
+import { webauthnOK, passkeyLogin, passkeyRegister, IS_ANDROID, api } from '../lib/api.js'
 import { pushSupported, enablePush, disablePush, sendTestPush } from '../lib/push.js'
 import { wakeLockSupported } from '../lib/wakelock.js'
 import { t, LANGS, INSTR_LANGS } from '../lib/i18n.js'
@@ -21,7 +22,7 @@ export default function Settings() {
   const S = useStore(s => s.S)
   const user = useStore(s => s.user)
   const config = useStore(s => s.config)
-  const { update, replaceState, setUser, pullState, pushState, signOut, signOutAll, resetDemo } = useStore()
+  const { update, replaceState, setUser, pullState, pushState, signOut, signOutAll, deleteAccount: storeDeleteAccount, resetDemo } = useStore()
   const toast = useUI(s => s.toast)
   const fileRef = useRef(null)
   const importRef = useRef(null)
@@ -69,37 +70,162 @@ export default function Settings() {
     },
   })
 
+  const handleLogOut = () => confirmSheet({
+    title: t('Log out?'),
+    message: user
+      ? t('Your data will sync to your cloud profile first, then you will be signed out on this device.')
+      : t('End this guest session and return to the login screen?'),
+    confirmText: t('Log out'),
+    danger: false,
+    onConfirm: async () => {
+      await signOut()
+      nav('/home')
+      toast(t('Logged out successfully'))
+    }
+  })
+
+  const handleDeleteAccount = () => confirmSheet({
+    title: t('Permanently delete account and all data?'),
+    message: t('This will permanently delete your profile, workout logs, routines, and backups. This CANNOT be undone.'),
+    confirmText: t('Permanently Delete'),
+    danger: true,
+    onConfirm: async () => {
+      try {
+        if (storeDeleteAccount) {
+          await storeDeleteAccount()
+        } else {
+          await api('/api/account/delete', { method: 'POST', body: '{}' })
+          await signOut()
+        }
+        nav('/home')
+        toast(t('Account and all data permanently deleted'))
+      } catch (e) {
+        toast(e.message || t('Could not delete account'))
+      }
+    }
+  })
+
+  const currentGender = S.gender || S.body || 'male'
+  const handleGenderChange = v => {
+    update(s => {
+      s.gender = v
+      s.body = v
+      const bw = lastBW(s)
+      if (bw?.w) {
+        const recalculated = calculateTDEE({
+          weightKg: bw.w,
+          heightCm: s.height || 175,
+          ageYears: s.age || 26,
+          gender: v,
+          activityLevel: s.activityLevel || 'moderate',
+          goal: s.userGoal === 'lose_fat' ? 'cut' : s.userGoal === 'build_muscle' ? 'bulk' : 'maintain'
+        })
+        s.nutritionTargets = {
+          calories: recalculated.targetCalories,
+          protein: recalculated.proteinGrams,
+          carbs: recalculated.carbsGrams,
+          fat: recalculated.fatGrams,
+          waterMl: recalculated.waterTargetMl
+        }
+      }
+    })
+    document.documentElement.dataset.gender = v
+    toast(t('Theme and 3D muscle map personalized for {0}', v === 'female' ? t('Female') : t('Male')))
+  }
+
   return <div className="narrow">
     <div className="hdr">
       <button className="iconbtn" onClick={() => nav('/home')} aria-label={t('Home')}><Icon name="chevronLeft" /></button>
       <div style={{ flex: 1, marginLeft: 10 }}><h1>{t('Settings')}</h1></div>
     </div>
 
-    {/* ---------- account (demo and mobile builds have nothing to sign in to) ---------- */}
-    <Section title={MOBILE ? t('Your data') : DEMO ? t('Demo') : t('Account')}>
-      {MOBILE ? <>
-        <Row icon="lock" iconTint="var(--acc)" title={t('All data stays on this phone')} subtitle={t('No account, no cloud — back it up anytime with Export below.')} />
-        <Row icon="rocket" iconTint="var(--indigo)" title={t('Self-host openGym')} subtitle={t('Passkey sign-in, sync across your devices, your own data.')} accessory="chevron"
-          onClick={() => window.open(REPO, '_blank', 'noopener')} />
-      </> : DEMO ? <>
-        <Row icon="sparkles" iconTint="var(--acc)" title={t('You’re in the demo')} subtitle={t('Example data, stored only in this browser — change anything you like.')} />
-        <Row icon="reset" iconTint="var(--blue)" title={t('Reset demo data')} accessory="chevron"
-          onClick={() => confirmSheet({ title: t('Reset demo data?'), message: t('Puts the example plan, workouts and weigh-ins back the way they started.'), confirmText: t('Reset'), onConfirm: () => { resetDemo(); nav('/home'); toast(t('Demo data reset')) } })} />
-        <Row icon="rocket" iconTint="var(--indigo)" title={t('Self-host openGym')} subtitle={t('Passkey sign-in, sync across your devices, your own data.')} accessory="chevron"
-          onClick={() => window.open(REPO, '_blank', 'noopener')} />
-      </> : user ? <>
-        <Row icon="personCircle" iconTint="var(--grey)" title={user.name} subtitle={t('Signed in with passkey — data syncs to this profile.')} />
-        {user.admin && <Row icon="wrench" iconTint="var(--indigo)" title={t('Admin dashboard')} accessory="chevron" onClick={() => nav('/admin')} />}
-        <Row icon="signOut" iconTint="var(--red)" title={t('Sign out')} danger onClick={() => confirmSheet({ title: t('Sign out?'), message: t('Your data is synced to your profile first, then cleared from this device.'), confirmText: t('Sign out'), danger: true, onConfirm: () => { signOut(); nav('/home') } })} />
-        <Row icon="shield" iconTint="var(--red)" title={t('Sign out everywhere')} subtitle={t('Ends this profile’s sessions on all your devices.')} danger onClick={signOutEverywhere} />
-      </> : webauthnOK() ? <>
-        <Row icon="sparkles" iconTint="var(--acc)" title={t('Create passkey profile')} subtitle={t('Keeps your data safe and separate per person.')} accessory="chevron" onClick={registerHere} />
-        <Row icon="person" iconTint="var(--blue)" title={t('Sign in with passkey')} accessory="chevron" onClick={signInHere} />
-      </> : (
-        <Row icon="lock" iconTint="var(--grey)" title={t('Passkeys not supported in this browser.')} />
+    {/* ---------- MuscleTrack Features ---------- */}
+    <Section title={t('MuscleTrack Features')}>
+      <Row icon="droplet" iconTint="#38bdf8" title={t('Diet, Macros & Water Tracker')} subtitle={t('Log meals, scan foods, track water and fasting')} accessory="chevron" onClick={() => nav('/nutrition')} />
+      <Row icon="recovery" iconTint="var(--acc)" title={t('Muscle Recovery & 3D Map')} subtitle={t('Real-time fatigue tracking & recovery rates')} accessory="chevron" onClick={() => nav('/recovery')} />
+      <Row icon="socks" iconTint="#38bdf8" title={t('Compression & Gear Session')} subtitle={t('Active recovery gear logging and timers')} accessory="chevron" onClick={() => nav('/compression')} />
+      <Row icon="calendar" iconTint="var(--orange)" title={t('Training Plan & Routines')} subtitle={t('Edit routines, splits, and weekly schedules')} accessory="chevron" onClick={() => nav('/plan')} />
+      <Row icon="magnifier" iconTint="var(--purple)" title={t('Exercise Library')} subtitle={t('1,300+ exercises with animations & instructions')} accessory="chevron" onClick={() => nav('/library')} />
+    </Section>
+
+    {/* ---------- account & session ---------- */}
+    <Section title={t('Account & Session')}>
+      {user ? (
+        <>
+          <Row
+            icon="personCircle"
+            iconTint="var(--acc)"
+            title={user.name}
+            subtitle={t('Signed in with passkey · Cloud synced')}
+          />
+          {user.admin && <Row icon="wrench" iconTint="var(--indigo)" title={t('Admin dashboard')} accessory="chevron" onClick={() => nav('/admin')} />}
+        </>
+      ) : (
+        <>
+          <Row
+            icon="personCircle"
+            iconTint="var(--grey)"
+            title={t('Guest Lifter')}
+            subtitle={t('Local session · Stored only in this browser')}
+          />
+          {webauthnOK() && (
+            <>
+              <Row icon="sparkles" iconTint="var(--acc)" title={t('Create passkey profile')} subtitle={t('Sync data across devices')} accessory="chevron" onClick={registerHere} />
+              <Row icon="person" iconTint="var(--blue)" title={t('Sign in with passkey')} accessory="chevron" onClick={signInHere} />
+            </>
+          )}
+        </>
+      )}
+
+      {/* Prominent Action Buttons: Log Out & Delete Account */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '10px 14px 4px' }}>
+        <button
+          className="btn"
+          style={{
+            height: 44,
+            borderRadius: 12,
+            fontWeight: 600,
+            fontSize: 13,
+            gap: 6,
+            background: 'var(--surface-2)',
+            borderColor: 'var(--sep)',
+            color: 'var(--label)',
+            justifyContent: 'center'
+          }}
+          onClick={handleLogOut}
+        >
+          <Icon name="signOut" size={16} style={{ color: 'var(--orange)' }} />
+          <span>{t('Log Out')}</span>
+        </button>
+
+        <button
+          className="btn danger"
+          style={{
+            height: 44,
+            borderRadius: 12,
+            fontWeight: 600,
+            fontSize: 13,
+            gap: 6,
+            justifyContent: 'center'
+          }}
+          onClick={handleDeleteAccount}
+        >
+          <Icon name="trash" size={16} />
+          <span>{t('Delete Account')}</span>
+        </button>
+      </div>
+
+      {user && (
+        <Row
+          icon="shield"
+          iconTint="var(--red)"
+          title={t('Sign out everywhere')}
+          subtitle={t('Ends this profile’s sessions on all your devices.')}
+          danger
+          onClick={signOutEverywhere}
+        />
       )}
     </Section>
-    {!user && !DEMO && !MOBILE && <p className="sect-f" style={{ marginTop: -18, marginBottom: 22 }}>{t('Guest mode — data lives only in this browser.')}</p>}
 
     {/* ---------- general ---------- */}
     <Section title={t('General')} footer={t('Note: switching units only changes the label — logged numbers are not converted.')}>
@@ -155,6 +281,33 @@ export default function Settings() {
 
     {(user || MOBILE) && <NotificationsCard S={S} update={update} toast={toast} />}
 
+    {/* ---------- Personalization & Gender ---------- */}
+    <Section
+      title={t('Personalization & Gender')}
+      footer={t('Adapts your dynamic app theme, 3D muscle recovery map, body contours, and metabolic calorie formulas.')}
+    >
+      <Row
+        icon="person"
+        iconTint={currentGender === 'female' ? '#D97F78' : '#B58863'}
+        title={t('Gender & Physiology')}
+        subtitle={
+          currentGender === 'female'
+            ? t('Female · Champagne Rose Luxury Theme & Female 3D Muscle Map')
+            : t('Male · Warm Bronze Slate Theme & Male 3D Muscle Map')
+        }
+      >
+        <Segmented
+          className="seg-inline"
+          options={[
+            { value: 'male', label: t('Male') },
+            { value: 'female', label: t('Female') }
+          ]}
+          value={currentGender === 'female' ? 'female' : 'male'}
+          onChange={handleGenderChange}
+        />
+      </Row>
+    </Section>
+
     {/* ---------- appearance ---------- */}
     <Section title={t('Appearance')} footer={DEMO || MOBILE ? undefined : t('synced with your profile')}>
       <Row icon="moon" iconTint="var(--indigo)" title={t('Theme')}>
@@ -165,20 +318,11 @@ export default function Settings() {
           onChange={v => update(s => { s.theme = v })}
         />
       </Row>
-      {/* Purely how the muscle map is drawn — nothing else in the app reads this. */}
-      <Row icon="figureStrength" iconTint="var(--teal)" title={t('Body diagram')}>
-        <Segmented
-          className="seg-inline"
-          options={[{ value: 'male', label: t('Male') }, { value: 'female', label: t('Female') }]}
-          value={S.body === 'female' ? 'female' : 'male'}
-          onChange={v => update(s => { s.body = v })}
-        />
-      </Row>
       <div className="lrow" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 12, paddingTop: 13, paddingBottom: 14 }}>
         <span className="lrow-t">{t('Accent color')}</span>
         <div className="swatches">
           {Object.entries(ACCENTS).map(([k, c]) => (
-            <button key={k} className={'swatch' + ((S.accent || 'lime') === k ? ' on' : '')}
+            <button key={k} className={'swatch' + ((S.accent || 'bronze') === k ? ' on' : '')}
               style={{ background: c }} onClick={() => update(s => { s.accent = k })} aria-label={k} />
           ))}
         </div>
@@ -209,9 +353,15 @@ export default function Settings() {
         subtitle={t('to install openGym as a full-screen app.') + ' ' + (user ? t('Your data syncs with your profile — sign in anywhere to see it.') : t('Guest data stays on this device — export a backup now and then!'))} />
     </Section>}
 
-    <div className="dim small" style={{ textAlign: 'center', marginTop: 4, lineHeight: 1.6 }}>
-      openGym · {t('free & open source (AGPL v3)')}<br />
-      <a href="https://github.com/DuarteSantos8/openGym" target="_blank" rel="noopener">source code</a> · exercise data: hasaneyldrm/exercises-dataset (CC)
+    <div className="dim small" style={{ textAlign: 'center', marginTop: 16, marginBottom: 24, lineHeight: 1.6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--acc)', fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
+        <Icon name="muscletrack" size={20} />
+        <span>MuscleTrack</span>
+      </div>
+      <div>{t('Track. Recover. Improve.')}</div>
+      <div style={{ fontSize: 11, marginTop: 4, opacity: 0.7 }}>
+        {t('Commercial Edition')} · AGPL-3.0 · {t('Exercise data: CC')}
+      </div>
     </div>
   </div>
 }

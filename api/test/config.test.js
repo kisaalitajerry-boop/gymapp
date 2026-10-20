@@ -57,16 +57,16 @@ test('a Claude Code setup token is encrypted and reaches only the Agent SDK envi
   assert.deepEqual(Object.keys(env).sort(), ['CLAUDE_CODE_DISABLE_AUTO_MEMORY', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CONFIG_DIR', 'HOME', 'PATH', 'TMPDIR']);
 });
 
-test('retired Gemini and Custom command configurations reset to unconfigured Claude', () => {
+test('retired provider and Custom command configurations reset to unconfigured Claude', () => {
   cfg.save({
     enabled: true,
-    provider: 'gemini',
+    provider: 'legacy-retired-provider',
     customCommand: '/usr/local/bin/my-coach',
-    auth: { type: 'apikey', data: cfg.encrypt({ token: 'gemini-key' }) }
+    auth: { type: 'apikey', data: cfg.encrypt({ token: 'old-key' }) }
   });
   cfg.reset();
   const current = cfg.load();
-  assert.deepEqual(Object.keys(cfg.PROVIDERS).sort(), ['claude', 'codex', 'fixture']);
+  assert.deepEqual(Object.keys(cfg.PROVIDERS).sort(), ['claude', 'codex', 'fixture', 'gemini']);
   assert.equal(current.provider, 'claude');
   assert.equal(current.auth, null);
   assert.equal(Object.hasOwn(current, 'customCommand'), false);

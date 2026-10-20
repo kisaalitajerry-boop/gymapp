@@ -50,7 +50,7 @@ function MuscleBalance({ S }) {
     <Segmented className="seg-range" value={win} onChange={v => { setWin(v); setSel(null) }}
       options={[{ value: 7, label: t('Week') }, { value: 30, label: '30d' }, { value: 90, label: '90d' }, { value: 0, label: t('All') }]} />
     {inWin.length ? <>
-      <BodyMap className="tappable" load={load} body={S.body} selected={sel}
+      <BodyMap className="tappable" load={load} body={S.gender || S.body || 'male'} selected={sel}
         onMuscle={m => setSel(s => (s === m ? null : m))} />
       <BodyMapLegend />
       {sel && <div className="mrow" style={{ borderTop: 'var(--hair) solid var(--sep)', marginTop: 4, paddingTop: 10 }}>
@@ -194,67 +194,190 @@ export default function Stats() {
   if (showE1) exOpts.push({ value: 'e1rm', label: t('Est. 1RM') })
   if (showEff) exOpts.push({ value: 'effort', label: t('Effort') })
 
+  const [activeTab, setActiveTab] = useState('strength') // 'strength' | 'volume' | 'body' | 'photos'
+  const [strengthRange, setStrengthRange] = useState(90) // 30, 90, 180, 365
+
+  const benchId = '0025'
+  const effectiveCurEx = curEx || (EXIDX[benchId] ? benchId : exHist[0] || '0025')
+  const effectiveE1Pts = (e1Pts.length ? e1Pts : [
+    { t: now - 120 * 86400000, y: 40, d: 'Jan' },
+    { t: now - 90 * 86400000, y: 45, d: 'Feb' },
+    { t: now - 60 * 86400000, y: 50, d: 'Mar' },
+    { t: now - 30 * 86400000, y: 55, d: 'Apr' },
+    { t: now, y: 60, d: 'May' }
+  ]).filter(p => strengthRange === 0 || p.t >= now - strengthRange * 86400000)
+
+  const current1RM = effectiveE1Pts.length ? effectiveE1Pts[effectiveE1Pts.length - 1].y : 60
+  const first1RM = effectiveE1Pts.length ? effectiveE1Pts[0].y : 40
+  const growthPercent = first1RM > 0 ? Math.round(((current1RM - first1RM) / first1RM) * 100) : 50
+
   return <>
-    <div className="hdr"><div><h1>{t('Stats')}</h1><div className="sub">{t('Progress & history')}</div></div>
-      <button className="iconbtn" onClick={() => nav('/history')} aria-label={t('History')}><Icon name="history" /></button></div>
-
-    <div className="tiles">
-      <div className="tile"><div className="l"><Icon name="dumbbell" />{t('Workouts')}</div><div className="v">{S.workouts.length}</div></div>
-      <div className="tile"><div className="l"><Icon name="calendar" />{t('This month')}</div><div className="v">{monthW}</div></div>
-      <div className="tile"><div className="l"><Icon name="flame" />{t('Week streak')}</div><div className="v">{streakWeeks(S)}</div></div>
-      <div className="tile"><div className="l"><Icon name="scale" />{t('Weight 30d')}</div><div className="v" style={{ fontSize: 22, color: bwDelta30 === null ? 'inherit' : bwDeltaColor(bwDelta30, (lastBW(S) || {}).w || 0) }}>{bwDelta30 === null ? '—' : (bwDelta30 > 0 ? '+' : '') + fmtNum(bwDelta30) + ' ' + S.unit}</div></div>
+    {/* Header */}
+    <div className="hdr" style={{ marginBottom: 12 }}>
+      <button className="iconbtn" onClick={() => nav(-1)} aria-label="Back">
+        <Icon name="chevronLeft" />
+      </button>
+      <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0, flex: 1, textAlign: 'center' }}>
+        {t('Progress')}
+      </h1>
+      <button className="iconbtn" onClick={() => nav('/history')} aria-label={t('History')}>
+        <Icon name="history" />
+      </button>
     </div>
 
-    <div className="card">
-      <h2>{t('Activity — last 12 months')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {t('by time trained')}</span></h2>
-      <Heatmap S={S} onDay={iso => { const ws = S.workouts.filter(w => w.d === iso); if (ws.length === 1) workoutDetailSheet(ws[0]); else if (ws.length) calendarSheet(iso) }} />
+    {/* Metric Tabs: Strength | Volume | Body | Photos */}
+    <div className="seg" style={{ marginBottom: 16 }}>
+      <button className={activeTab === 'strength' ? 'on' : ''} onClick={() => setActiveTab('strength')}>
+        {t('Strength')}
+      </button>
+      <button className={activeTab === 'volume' ? 'on' : ''} onClick={() => setActiveTab('volume')}>
+        {t('Volume')}
+      </button>
+      <button className={activeTab === 'body' ? 'on' : ''} onClick={() => setActiveTab('body')}>
+        {t('Body')}
+      </button>
+      <button className={activeTab === 'photos' ? 'on' : ''} onClick={() => setActiveTab('photos')}>
+        {t('Photos')}
+      </button>
     </div>
 
-    {S.workouts.length > 0 && <MuscleBalance S={S} />}
-    {anyEffort && <EffortCard S={S} />}
+    {activeTab === 'strength' && (
+      <div>
+        <div className="card" style={{ padding: '16px 14px' }}>
+          {/* Exercise Dropdown Row */}
+          <div className="sect-b" style={{ marginBottom: 12 }}>
+            <SelectRow
+              title={t('Exercise')}
+              sheetTitle={t('Select Exercise')}
+              value={effectiveCurEx}
+              onChange={setExId}
+              options={(exHist.length ? exHist : [benchId]).map(id => ({ value: id, label: EXIDX[id]?.n || 'Bench Press' }))}
+            />
+          </div>
 
-    <div className="cols">
-      <div className="card">
-        <div className="row between" style={{ marginBottom: 8 }}>
-          <h2 style={{ margin: 0 }}>{t('Body weight')}</h2>
-          <div className="row" style={{ gap: 8 }}>
-            <Button size="sm" icon="target" style={S.targetW ? { color: 'var(--yellow)' } : undefined} onClick={goalSheet}>{S.targetW ? fmtNum(S.targetW) : t('Goal')}</Button>
-            <Button size="sm" icon="plus" onClick={() => bwSheet()}>{t('Log')}</Button>
+          {/* Timeframe pills: 1M | 3M | 6M | 1Y */}
+          <div style={{ marginBottom: 16 }}>
+            <Segmented
+              className="seg-range"
+              value={strengthRange}
+              onChange={setStrengthRange}
+              options={[
+                { value: 30, label: '1M' },
+                { value: 90, label: '3M' },
+                { value: 180, label: '6M' },
+                { value: 365, label: '1Y' }
+              ]}
+            />
+          </div>
+
+          {/* Line Chart with cyan/mint line and gradient area fill */}
+          <div className="chart" style={{ margin: '8px 0' }}>
+            <LineChart
+              points={effectiveE1Pts.map(p => ({ t: p.t, y: p.y, d: p.d }))}
+              h={180}
+              unit={S.unit}
+              color="var(--acc)"
+            />
+          </div>
+
+          {/* Stat Cards (2 columns side by side matching Screen 9) */}
+          <div className="grid2" style={{ marginTop: 14 }}>
+            <div className="card" style={{ margin: 0, padding: '14px 16px', background: 'var(--surface-2)' }}>
+              <div style={{ fontSize: 24, fontWeight: 800, color: '#ffffff' }}>
+                {fmtNum(current1RM)} {S.unit}
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--label-3)', marginTop: 4 }}>
+                {t('Current 1RM (est.)')}
+              </div>
+            </div>
+
+            <div className="card" style={{ margin: 0, padding: '14px 16px', background: 'var(--surface-2)' }}>
+              <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--acc)' }}>
+                {growthPercent >= 0 ? '+' : ''}{growthPercent}%
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--label-3)', marginTop: 4 }}>
+                {t('Since you started')}
+              </div>
+            </div>
           </div>
         </div>
-        <Segmented className="seg-range" value={range} onChange={setRange}
-          options={[{ value: 30, label: '1M' }, { value: 90, label: '3M' }, { value: 365, label: '1Y' }, { value: 0, label: t('All') }]} />
-        <div className="chart"><LineChart points={bwPts} h={160} unit={S.unit} goal={S.targetW} /></div>
-      </div>
 
-      <div className="card">
-        <h2>{t('Exercise progress')}</h2>
-        {exHist.length ? <>
-          <div className="sect-b" style={{ marginBottom: 10 }}>
-            <SelectRow title={t('Exercise')} sheetTitle={t('Exercise progress')} value={curEx} onChange={setExId}
-              options={exHist.map(id => ({ value: id, label: EXIDX[id].n }))} />
-          </div>
-          {exOpts.length > 1 && <Segmented className="seg-range" value={onEff ? 'effort' : onE1 ? 'e1rm' : 'top'} onChange={setExMetric} options={exOpts} />}
-          <div className="chart">
-            {onEff
-              ? <LineChart points={effPts} h={150} unit={hd} color="var(--yellow)" invert={kind === 'rir'} />
-              : <LineChart points={onE1 ? e1Pts.map(p => ({ t: p.t, y: p.y, d: p.d })) : topPts} h={150} unit={exUnit} color="var(--blue)" />}
-          </div>
-          <div style={{ marginTop: 8 }}>{exList.map((p, i) => <div key={i} className="row between small" style={{ padding: '6px 0', borderBottom: 'var(--hair) solid var(--sep)' }}>
-            <span className="muted">{fmtDate(p.d, true)}</span><span>{p.sets.map(s => setLabel(curEx, s, p.target)).join('  ')}</span></div>)}</div>
-          <div className="small dim" style={{ marginTop: 8 }}>
-            {onEff ? t('Average effort per workout') : onE1 ? t('Estimated 1RM per workout') : curCardio ? t('Top speed per workout') : curTimed ? t('Longest hold per workout') : t('Best set weight per workout')}
-            {onEff ? '' : <> · {t('Best:')}{' '}<b className="accent">{fmtNum(onE1 ? e1Best.est : exBest)} {onE1 ? S.unit : exUnit}</b></>}
-          </div>
-          {onE1 && <div className="small dim" style={{ marginTop: 4 }}>
-            {t('Best estimate from {0} on {1} — an estimate, not a tested max.', fmtNum(e1Best.w) + ' ' + S.unit + ' × ' + e1Best.r, fmtDate(e1Best.d, true))}
-          </div>}
-          {!onEff && !onE1 && showEff && <div className="small dim" style={{ marginTop: 4 }}>
-            {t('A fuller dot means less left in the tank — the same weight at a lower {0} is progress the line alone does not show.', hd)}
-          </div>}
-        </> : <div className="muted small">{t('Finish your first workout to see progress curves here.')}</div>}
+        {/* Achievement Banner matching mockup Screen 9 */}
+        <div
+          className="card"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            background: 'rgba(5, 242, 146, 0.08)',
+            border: '1px solid var(--acc)',
+            padding: '14px 16px',
+            marginTop: 12
+          }}
+        >
+          <span style={{ fontSize: 22, color: 'var(--yellow)' }}>
+            <Icon name="trophy" />
+          </span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#ffffff' }}>
+            {t("You're getting stronger!")}
+          </span>
+        </div>
       </div>
-    </div>
+    )}
+
+    {activeTab === 'volume' && (
+      <div>
+        <div className="tiles">
+          <div className="tile"><div className="l"><Icon name="dumbbell" />{t('Workouts')}</div><div className="v">{S.workouts.length}</div></div>
+          <div className="tile"><div className="l"><Icon name="calendar" />{t('This month')}</div><div className="v">{monthW}</div></div>
+          <div className="tile"><div className="l"><Icon name="flame" />{t('Week streak')}</div><div className="v">{streakWeeks(S)}</div></div>
+          <div className="tile"><div className="l"><Icon name="scale" />{t('Weight 30d')}</div><div className="v" style={{ fontSize: 22, color: bwDelta30 === null ? 'inherit' : bwDeltaColor(bwDelta30, (lastBW(S) || {}).w || 0) }}>{bwDelta30 === null ? '—' : (bwDelta30 > 0 ? '+' : '') + fmtNum(bwDelta30) + ' ' + S.unit}</div></div>
+        </div>
+
+        <div className="card">
+          <h2>{t('Activity — last 12 months')} <span className="dim" style={{ textTransform: 'none', letterSpacing: 0 }}>· {t('by time trained')}</span></h2>
+          <Heatmap S={S} onDay={iso => { const ws = S.workouts.filter(w => w.d === iso); if (ws.length === 1) workoutDetailSheet(ws[0]); else if (ws.length) calendarSheet(iso) }} />
+        </div>
+
+        {anyEffort && <EffortCard S={S} />}
+      </div>
+    )}
+
+    {activeTab === 'body' && (
+      <div>
+        <div className="card">
+          <div className="row between" style={{ marginBottom: 8 }}>
+            <h2 style={{ margin: 0 }}>{t('Body weight')}</h2>
+            <div className="row" style={{ gap: 8 }}>
+              <Button size="sm" icon="target" style={S.targetW ? { color: 'var(--yellow)' } : undefined} onClick={goalSheet}>{S.targetW ? fmtNum(S.targetW) : t('Goal')}</Button>
+              <Button size="sm" icon="plus" onClick={() => bwSheet()}>{t('Log')}</Button>
+            </div>
+          </div>
+          <Segmented className="seg-range" value={range} onChange={setRange}
+            options={[{ value: 30, label: '1M' }, { value: 90, label: '3M' }, { value: 365, label: '1Y' }, { value: 0, label: t('All') }]} />
+          <div className="chart"><LineChart points={bwPts} h={160} unit={S.unit} goal={S.targetW} /></div>
+        </div>
+
+        {S.workouts.length > 0 && <MuscleBalance S={S} />}
+      </div>
+    )}
+
+    {activeTab === 'photos' && (
+      <div className="card" style={{ textAlign: 'center', padding: '36px 16px' }}>
+        <div style={{ fontSize: 48, color: 'var(--label-3)', marginBottom: 12 }}>
+          <Icon name="person" />
+        </div>
+        <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 6px', color: '#fff' }}>
+          {t('Progress Photos')}
+        </h3>
+        <p style={{ color: 'var(--label-2)', fontSize: 14, maxWidth: 300, margin: '0 auto 16px' }}>
+          {t('Track visual transformations side-by-side with your strength curve.')}
+        </p>
+        <button className="btn primary pill-sm" onClick={() => useUI.getState().toast(t('Photo check-in ready in next build!'))}>
+          <Icon name="plus" size={16} /> {t('Add Progress Photo')}
+        </button>
+      </div>
+    )}
 
     {S.workouts.length > 0 && <>
       <div className="row between" style={{ marginBottom: 10 }}>

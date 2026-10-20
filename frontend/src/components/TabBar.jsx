@@ -13,31 +13,30 @@ export default function TabBar({ onStart }) {
   const isGuest = useStore(s => s.isGuest())
   if (!user && !isGuest) return null
   const cur = loc.pathname.split('/')[1] || 'home'
-  const on = k => cur === k || (cur === 'history' && k === 'stats') || (cur === 'settings' && k === 'home')
-
-  const startWorkout = () => {
-    if (!S.active) {
-      const r = effectiveRoutine(S, todayISO())
-      if (r && r.ex.length) { onStart(r.id); return }
-    }
-    nav('/workout')
+  const on = k => {
+    if (k === 'home') return cur === 'home' || cur === ''
+    if (k === 'workout') return cur === 'workout'
+    if (k === 'stats') return cur === 'stats' || cur === 'history'
+    if (k === 'coach') return cur === 'coach'
+    if (k === 'more') return cur === 'settings' || cur === 'plan' || cur === 'library' || cur === 'admin' || cur === 'nutrition' || cur === 'recovery' || cur === 'compression'
+    return false
   }
-  const Tab = ({ k, icon, to, label }) => (
+
+  const Tab = ({ k, icon, to, label, badge }) => (
     <button className={on(k) ? 'on' : ''} onClick={() => nav(to)}>
-      <Icon name={icon} /><span>{label}</span>
+      <Icon name={icon} />
+      <span>{label}</span>
+      {badge && <span className="tab-badge" />}
     </button>
   )
 
   return (
     <nav id="tabbar">
       <Tab k="home" icon="house" to="/home" label={t('Home')} />
-      <Tab k="plan" icon="calendar" to="/plan" label={t('Plan')} />
-      <button className={'start' + (S.active ? ' rec' : '')} onClick={startWorkout}>
-        <span className="cir"><Icon name={S.active ? 'play' : 'dumbbell'} /></span>
-        <span>{S.active ? t('Resume') : t('Start')}</span>
-      </button>
-      <Tab k="stats" icon="chart" to="/stats" label={t('Stats')} />
-      <Tab k="library" icon="list" to="/library" label={t('Exercises')} />
+      <Tab k="workout" icon="dumbbell" to="/workout" label={t('Workout')} badge={S.active} />
+      <Tab k="stats" icon="chart" to="/stats" label={t('Progress')} />
+      <Tab k="coach" icon="sparkles" to="/coach" label={t('Coach')} />
+      <Tab k="more" icon="grid" to="/settings" label={t('More')} />
     </nav>
   )
 }

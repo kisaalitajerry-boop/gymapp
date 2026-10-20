@@ -1,0 +1,14 @@
+{
+  "name": "muscletrack-opengym",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MuscleTrack - Train Smarter • Recover Better • Be Stronger",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "test": "npm --prefix frontend test",
+    "start": "npm --prefix frontend run dev",
+    "api": "npm --prefix api start",
+    "api:test": "npm --prefix api test"
+  }
+}

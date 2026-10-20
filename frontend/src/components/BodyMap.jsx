@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useStore } from '../store/useStore.js'
 import { MUSCLES, INERT, MUSCLE_NAME, levelsOf } from '../lib/muscles.js'
 import { t } from '../lib/i18n.js'
 
@@ -26,39 +27,63 @@ function useBodyPaths() {
   return paths
 }
 
-function View({ view, levels, onMuscle, selected }) {
+function View({ view, levels, recovery, onMuscle, selected }) {
   return (
     <svg className="bm-v" viewBox={view.vb} role="img">
       {INERT.map(slug => (view.p[slug] || []).map((d, i) =>
         <path key={slug + i} className="bm-sil" d={d} />))}
-      {MUSCLES.map(slug => (view.p[slug] || []).map((d, i) =>
-        <path
-          key={slug + i}
-          className={'bm-m l' + (levels[slug] || 0) + (selected === slug ? ' sel' : '')}
-          d={d}
-          onClick={onMuscle ? () => onMuscle(slug) : undefined}
-        >
-          <title>{t(MUSCLE_NAME[slug])}</title>
-        </path>))}
+      {MUSCLES.map(slug => (view.p[slug] || []).map((d, i) => {
+        const rec = recovery && recovery[slug]
+        const recColor = rec?.status?.color
+        return (
+          <path
+            key={slug + i}
+            data-muscle={slug}
+            role={onMuscle ? 'button' : undefined}
+            tabIndex={onMuscle ? 0 : undefined}
+            aria-label={t(MUSCLE_NAME[slug])}
+            className={'bm-m ' + (recovery ? '' : 'l' + (levels[slug] || 0)) + (selected === slug ? ' sel' : '')}
+            style={recColor ? { fill: recColor, transition: 'fill 0.3s ease' } : undefined}
+            d={d}
+            onClick={onMuscle ? () => onMuscle(slug) : undefined}
+            onKeyDown={onMuscle ? e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onMuscle(slug)
+              }
+            } : undefined}
+          >
+            <title>{t(MUSCLE_NAME[slug])}{rec ? ` (${rec.percent}%)` : ''}</title>
+          </path>
+        )
+      }))}
     </svg>
   )
 }
 
 /**
- * <BodyMap load={{ chest: 12, … }} body="male" />
- * `load` is effective sets per muscle (see lib/muscles.js); shading is relative to
- * the hardest-worked muscle in that same load, so it always reads as a balance.
+ * <BodyMap load={{ chest: 12, … }} recovery={recoveryMap} singleView="front"|"back" body="male" />
  */
-export default function BodyMap({ load = {}, body = 'male', onMuscle, selected, className = '' }) {
+export default function BodyMap({ load = {}, recovery, singleView, body, onMuscle, selected, className = '' }) {
+  const storeBody = useStore(s => s.S?.gender || s.S?.body || 'male')
+  const effectiveBody = body || storeBody
   const paths = useBodyPaths()
-  const levels = levelsOf(load)
-  const g = paths && (paths[body] || paths.male)
+  const levels = recovery ? {} : levelsOf(load)
+  const g = paths && (paths[effectiveBody] || paths.male)
   return (
     <div className={'bodymap ' + className}>
-      {g ? <>
-        <View view={g.front} levels={levels} onMuscle={onMuscle} selected={selected} />
-        <View view={g.back} levels={levels} onMuscle={onMuscle} selected={selected} />
-      </> : <div className="bm-ph" aria-hidden="true" />}
+      {g ? (
+        singleView === 'front' ? (
+          <View view={g.front} levels={levels} recovery={recovery} onMuscle={onMuscle} selected={selected} />
+        ) : singleView === 'back' ? (
+          <View view={g.back} levels={levels} recovery={recovery} onMuscle={onMuscle} selected={selected} />
+        ) : (
+          <>
+            <View view={g.front} levels={levels} recovery={recovery} onMuscle={onMuscle} selected={selected} />
+            <View view={g.back} levels={levels} recovery={recovery} onMuscle={onMuscle} selected={selected} />
+          </>
+        )
+      ) : <div className="bm-ph" aria-hidden="true" />}
     </div>
   )
 }

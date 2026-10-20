@@ -9,7 +9,7 @@ import { beep, vibrate } from '../lib/sound.js'
 import { t } from '../lib/i18n.js'
 import { api } from '../lib/api.js'
 import Media from '../components/Media.jsx'
-import { startFlow, exercisePicker, exConfigSheet, exerciseDetailSheet, topWeightSheet, finishWorkout, workoutCompleteSheet, confirmSheet } from '../sheets.jsx'
+import { startFlow, exercisePicker, exConfigSheet, exerciseDetailSheet, topWeightSheet, finishWorkout, workoutCompleteSheet, confirmSheet, plateCalcSheet, swapExerciseSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button, Check, NumberField } from '../components/ui.jsx'
 import { nextPrescription, applyPrescription } from '../lib/progression.js'
@@ -54,7 +54,7 @@ function Elapsed({ start }) {
 }
 
 /* ---------- one exercise block (reps: weight×reps · time: a held duration · cardio: duration+speed) ---------- */
-function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemoveSet, onStartTimed }) {
+function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemoveSet, onStartTimed, onSwapExercise, onCompleteExercise }) {
   const S = useStore(s => s.S)
   const working = useUI(s => s.work)
   const entry = S.active.entries[entryIdx]
@@ -63,11 +63,7 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemov
   const cardio = mode === 'cardio'
   const timed = mode === 'time'
   const last = lastEntryFor(S, entry.id)
-  // The same number the "confirm your working weight" sheet calls your best, so the two
-  // never disagree inside one session: heaviest logged set, or the working weight you kept.
   const best = cardio ? 0 : Math.max(bestWeightFor(S, entry.id), (S.exWeights[entry.id] || {}).w || 0)
-  // What the progression policy decided for this session, and why (issue #17). Computed when
-  // the session was built so the reason matches the numbers already in the rows.
   const plan = entry.plan
   const col1 = cardio ? { f: 'min', step: 1, dec: false, hd: t('Duration (min)') }
     : timed ? { f: 'sec', step: 5, dec: false, hd: t('Seconds') }
@@ -75,38 +71,102 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemov
   const col2 = cardio ? { f: 'speed', step: 0.5, dec: true, hd: t('Speed (km/h)') }
     : timed ? { f: 'w', step: 2.5, dec: true, hd: t('Weight ({0})', S.unit) }
       : { f: 'r', step: 1, dec: false, hd: t('Reps') }
-  // Effort (RIR or RPE, whichever the profile logs) only makes sense for weighted rep sets,
-  // not cardio/timed holds, and is opt-in since it adds a third stepper to every row. `opt`
-  // because an unlogged effort is not the same as 0 — RIR 0 says the set went to failure.
   const kind = effortOf(S)
   const eff = EFFORT[kind]
   const col3 = mode === 'reps' && eff ? { ...eff, eff: kind, dec: true, opt: true, hd: t(eff.hd) } : null
-  // The effort column walks its own scale — see stepEffort. Weight and reps step up from 0
-  // with no ceiling, as they always did.
+
   const bump = (s, i, col, dir) => {
     if (col.eff) return onField(i, col.f, stepEffort(col.eff, s[col.f], dir))
     onField(i, col.f, Math.max(0, Math.round(((s[col.f] || 0) + dir * col.step) * 100) / 100))
   }
-  // Uses the shared stepper markup so a set row picks up the same control styling
-  // as every other +/- field in the app.
+
   const cell = (s, i, col, cls) => (
     <div className={'stp ' + cls}>
       <button aria-label="Decrease" onClick={() => bump(s, i, col, -1)}><Icon name="minus" /></button>
-      {/* a typed effort is capped — there is no RPE 12, and 12 reps in reserve is a warm-up */}
       <span className="val"><NumberField decimal={col.dec} nullable={col.opt} value={s[col.f] ?? ''}
         onChange={v => onField(i, col.f, col.eff ? capEffort(col.eff, v) : v)} /></span>
       <button aria-label="Increase" onClick={() => bump(s, i, col, 1)}><Icon name="plus" /></button>
     </div>
   )
+
+  const openMenu = () => {
+    useUI.getState().openSheet(close => (
+      <div>
+        <div className="row between" style={{ marginBottom: 14 }}>
+          <h3 style={{ margin: 0, textTransform: 'capitalize' }}>{ex.n}</h3>
+          <button className="iconbtn" onClick={close}><Icon name="xmark" /></button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button
+            className="btn"
+            style={{ justifyContent: 'flex-start', gap: 12 }}
+            onClick={() => {
+              close()
+              const w = entry.sets[0]?.w || best || 60
+              plateCalcSheet(w, S.unit, newW => {
+                entry.sets.forEach((_, idx) => onField(idx, 'w', newW))
+              })
+            }}
+          >
+            <Icon name="plate" size={20} />
+            <span>{t('Plate Calculator')}</span>
+          </button>
+          {onSwapExercise && (
+            <button
+              className="btn"
+              style={{ justifyContent: 'flex-start', gap: 12 }}
+              onClick={() => {
+                close()
+                swapExerciseSheet(ex, onSwapExercise)
+              }}
+            >
+              <Icon name="shuffle" size={20} />
+              <span>{t('Substitute Exercise')}</span>
+            </button>
+          )}
+          <button
+            className="btn"
+            style={{ justifyContent: 'flex-start', gap: 12 }}
+            onClick={() => {
+              close()
+              exerciseDetailSheet(ex)
+            }}
+          >
+            <Icon name="info" size={20} />
+            <span>{t('Exercise Guide & Form')}</span>
+          </button>
+        </div>
+      </div>
+    ))
+  }
+
   return <>
     <Media ex={ex} key={entry.id} compact={compact} minimizable />
     <div className="row between" style={{ marginBottom: 6 }}>
-      <div style={{ fontSize: compact ? 17 : 20, fontWeight: 600, letterSpacing: '-.02em', textTransform: 'capitalize', lineHeight: 1.2 }}>{ex.n}</div>
-      <button className="iconbtn" aria-label={t('Details')} onClick={() => exerciseDetailSheet(ex)}><Icon name="info" /></button>
+      <div style={{ fontSize: compact ? 17 : 22, fontWeight: 700, letterSpacing: '-.02em', textTransform: 'capitalize', lineHeight: 1.2 }}>{ex.n}</div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button
+          className="iconbtn"
+          aria-label={t('Plate Calculator')}
+          title={t('Plate Calculator')}
+          onClick={() => {
+            const w = entry.sets[0]?.w || best || 60
+            plateCalcSheet(w, S.unit, newW => {
+              entry.sets.forEach((_, idx) => onField(idx, 'w', newW))
+            })
+          }}
+        >
+          <Icon name="plate" />
+        </button>
+        <button className="iconbtn" aria-label={t('Options')} onClick={openMenu}>
+          <Icon name="dots" />
+        </button>
+      </div>
     </div>
     <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-      {cardio && <span className="tag acc"><Icon name="figureRun" />{t('Cardio')}</span>}
-      {(ex.tg || ex.bp) && <span className="tag">{t(ex.tg || ex.bp)}</span>}
+      {(ex.tg || ex.bp) && <span className="tag acc" style={{ fontWeight: 600 }}>{t(ex.tg || ex.bp)}</span>}
+      {ex.mg && ex.mg !== (ex.tg || ex.bp) && <span className="tag">{t(ex.mg)}</span>}
+      {ex.sm && <span className="tag">{t(ex.sm)}</span>}
       {ex.eq && <span className="tag">{t(ex.eq)}</span>}
       {best > 0 && <span className="tag nocap">{t('Best:')} {fmtNum(best)} {S.unit}</span>}
     </div>
@@ -116,24 +176,33 @@ function ExerciseBlock({ entryIdx, compact, onToggle, onField, onAddSet, onRemov
       <span>{t(...plan.why)}</span>
     </div>}
     <div className="card" style={{ marginTop: 10, marginBottom: 0 }}>
-      {/* the header carries the same eff3 sizing as the rows, or the labels drift off their columns */}
       <div className={'sethead' + (col3 ? ' eff3' : '')}><span className="n-sp" /><span className="w-sp">{col1.hd}</span><span className="r-sp">{col2.hd}</span>{col3 && <span className="eff-sp">{col3.hd}</span>}{timed && <span className="ck-sp" />}<span className="ck-sp" /></div>
       {entry.sets.map((s, i) => <div key={i} className={'setrow' + (s.done ? ' done' : '') + (col3 ? ' eff3' : '')}>
         <div className="n">{i + 1}</div>
         {cell(s, i, col1, 'w')}
         {cell(s, i, col2, 'r')}
         {col3 && cell(s, i, col3, 'eff')}
-        {/* A timed set is started, not typed: the timer counts the hold down and checks the
-            set off itself. The checkbox stays for anyone who timed it on their own watch. */}
         {timed && <button className="setgo" aria-label={t('Start set')} disabled={s.done || !!working}
           onClick={() => onStartTimed(i)}><Icon name="play" /></button>}
         <Check checked={s.done} onChange={() => onToggle(i)} />
       </div>)}
-      <div style={{ height: 8 }} />
+      <div style={{ height: 10 }} />
       <div className="row">
         <Button size="sm" icon="minus" disabled={entry.sets.length <= 1} onClick={onRemoveSet}>{t('Remove set')}</Button>
         <Button size="sm" icon="plus" onClick={onAddSet}>{t('Add set')}</Button>
       </div>
+
+      {onCompleteExercise && (
+        <div style={{ marginTop: 14 }}>
+          <button
+            className="btn primary pill"
+            onClick={onCompleteExercise}
+            style={{ width: '100%', fontSize: 16 }}
+          >
+            {t('Complete Exercise')}
+          </button>
+        </div>
+      )}
     </div>
   </>
 }
@@ -236,6 +305,29 @@ function ActiveWorkout() {
     }
   }, [])
 
+  const swapEx = (idx, newEx) => {
+    update(s => {
+      const e = s.active.entries[idx]
+      e.id = newEx.id
+      const full = { ...e.target, id: newEx.id }
+      e.plan = nextPrescription(s, full, s.routines.find(r => r.id === s.active.routineId))
+      e.sets = applyPrescription(buildSets(s, full), e.plan)
+    })
+    useUI.getState().toast(t('Swapped to {0}', newEx.n))
+  }
+
+  const completeEx = idx => {
+    mutEntry(idx, e => {
+      e.sets.forEach(s => { s.done = true })
+    })
+    if (unitIdx < units.length - 1) {
+      update(s => { s.active.cur = units[unitIdx + 1][0] })
+      useUI.getState().toast(t('Exercise completed! Next exercise loaded.'))
+    } else {
+      finishWorkout()
+    }
+  }
+
   return <div className="narrow">
     <div className="hdr">
       <button className="iconbtn" aria-label={t('Discard')} onClick={() => confirmSheet({ title: t('Discard workout?'), message: t('The sets you logged in this session will be lost.'), confirmText: t('Discard'), danger: true, onConfirm: () => { update(s => { s.active = null }); stopRest(); nav('/home') } })}><Icon name="xmark" /></button>
@@ -252,11 +344,11 @@ function ActiveWorkout() {
           {unit.map((idx, k) => <div key={idx} className="ss-ex">
             {k > 0 && <div className="ss-amp">+</div>}
             <ExerciseBlock entryIdx={idx} compact
-              onToggle={i => toggle(idx, i)} onField={(i, f, v) => setField(idx, i, f, v)} onAddSet={() => addSet(idx)} onRemoveSet={() => removeSet(idx)} onStartTimed={i => startTimed(idx, i)} />
+              onToggle={i => toggle(idx, i)} onField={(i, f, v) => setField(idx, i, f, v)} onAddSet={() => addSet(idx)} onRemoveSet={() => removeSet(idx)} onStartTimed={i => startTimed(idx, i)} onSwapExercise={newEx => swapEx(idx, newEx)} onCompleteExercise={() => completeEx(idx)} />
           </div>)}
         </div>
       ) : (
-        <ExerciseBlock entryIdx={cur} onToggle={i => toggle(cur, i)} onField={(i, f, v) => setField(cur, i, f, v)} onAddSet={() => addSet(cur)} onRemoveSet={() => removeSet(cur)} onStartTimed={i => startTimed(cur, i)} />
+        <ExerciseBlock entryIdx={cur} onToggle={i => toggle(cur, i)} onField={(i, f, v) => setField(cur, i, f, v)} onAddSet={() => addSet(cur)} onRemoveSet={() => removeSet(cur)} onStartTimed={i => startTimed(cur, i)} onSwapExercise={newEx => swapEx(cur, newEx)} onCompleteExercise={() => completeEx(cur)} />
       )}
     </> : <div className="empty"><div className="ico"><Icon name="shuffle" /></div>{t('Freestyle workout — add your first exercise.')}</div>}
 

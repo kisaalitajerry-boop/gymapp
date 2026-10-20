@@ -8,6 +8,8 @@ export default defineConfig({
   plugins: [react()],
   base: './',
   server: {
+    host: true,
+    port: 5173,
     proxy: {
       '/api': { target: backend, changeOrigin: true },
       '/img': { target: media, changeOrigin: true },
